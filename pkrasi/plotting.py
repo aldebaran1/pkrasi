@@ -36,7 +36,8 @@ def plotIMmap(x,y,z,title='',save=False,lon0=None,lat0=None,alt=None,
     plt.colorbar()
     plt.show()
 ###############################################################################
-def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None):
+def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None,
+                lat0=None,lon0=None,norm_gamma=None):
     # Circles:
     azgrid = np.linspace(0,360,100)
     elgrid = np.linspace(0,80,100)
@@ -45,7 +46,7 @@ def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None):
     #Plot Image
     fig = plt.figure(figsize=(8,8))
     plt.title(title,y=1.05)
-    plt.pcolormesh(x,y,z, cmap=cmap)
+    gca = plt.pcolormesh(x,y,z, cmap=cmap)
     # Plot rings
     for i in range(rgrid.shape[0]):
         xc = rgrid[i] * np.cos(np.deg2rad(azgrid))
@@ -63,18 +64,20 @@ def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None):
         if i == 0 or i > 5:
             xc = -82 * np.sin(np.deg2rad(anglegrid[i]))
             yc = 82 * np.cos(np.deg2rad(anglegrid[i]))
-            plt.text(xc,yc,(360-anglegrid[i])%360,fontsize=12,fontweight='bold')
+            plt.text(xc,yc,anglegrid[i],fontsize=12,fontweight='bold')
         elif i == 4 or i == 1 or i == 5:
             xc = -85 * np.sin(np.deg2rad(anglegrid[i]))
             yc = 85 * np.cos(np.deg2rad(anglegrid[i]))
-            plt.text(xc,yc,360-anglegrid[i],fontsize=12,fontweight='bold')
+            plt.text(xc,yc,anglegrid[i],fontsize=12,fontweight='bold')
         else:
             xc = -90 * np.sin(np.deg2rad(anglegrid[i]))
             yc = 90 * np.cos(np.deg2rad(anglegrid[i]))
-            plt.text(xc,yc,360-anglegrid[i],fontsize=12,fontweight='bold')
+            plt.text(xc,yc,anglegrid[i],fontsize=12,fontweight='bold')
     plt.axis('off')
-    cbaxes = fig.add_axes([1.02, 0.1, 0.03, 0.8]) 
-    plt.clim(clim)
+    cbaxes = fig.add_axes([1.03, 0.1, 0.03, 0.8]) 
+    if norm_gamma is not None:
+        gca.set_norm(colors.PowerNorm(gamma=norm_gamma))
+    gca.set_clim(clim)
     plt.colorbar(cax=cbaxes)
     plt.tight_layout()
     plt.show()

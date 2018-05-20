@@ -71,6 +71,12 @@ def write2HDF(data,h5fn,wl):
     except Exception as e:
         raise (e)
 
+def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
+    t1 = datetime.now()
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
+    print ('Data loaded in {}'.format(datetime.now()-t1))
+    return data
+
 def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
                       Nim=512, asi=False):
     # Mapping altitude to meters
@@ -78,7 +84,7 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
     # Read in the data utliizing DASCutils
     print ('Reading the data')
     t1 = datetime.now()
-    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl)
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,treq=timelim)
     print ('Data loaded in {}'.format(datetime.now()-t1))
     # Get time vector as datetime
     obstimes = data.time.values.astype(datetime)
@@ -120,3 +126,51 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
         return T, xgrid, ygrid, imlla, [lon0, lat0]
     else:
         return T, xgrid, ygrid, imlla
+    
+def returnASpolar(folder,azfn=None,elfn=None, wl=558, 
+                  timelim=[], Nim=512, asi=False):
+    # Read in the data utliizing DASCutils
+    print ('Reading the data')
+    t1 = datetime.now()
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
+    print ('Data loaded in {}'.format(datetime.now()-t1))
+    # Get time vector as datetime
+    obstimes = data.time.values.astype(datetime)
+    # Timle limits
+    if len(timelim) > 0:
+        idt = np.where( (obstimes >= timelim[0]) & (obstimes <= timelim[1]))[0]
+    else:
+        idt = np.arange(obstimes.shape[0])
+    T = obstimes[idt]
+    print ('Data reducted from {0} to {1}'.format(obstimes.shape[0], T.shape[0]))
+    # Get Az and El grids
+    az = data['az'].values
+    el = data['el'].values
+    # Camera position
+    lat0 = data.lat
+    lon0 = data.lon
+    # Image size
+    if Nim is None or (not isinstance(Nim,int)):
+        Nim = az.shape[0]
+    # Prepare a polar projection to cartesian
+    rel = 90-el
+    x = rel*np.cos(np.deg2rad(az))
+    y = rel*np.sin(np.deg2rad(az))
+    # Make an empty image array
+    imae = np.nan * np.ones((T.shape[0],Nim,Nim))
+    c = 0
+    for i in idt:
+        print ('Processing-interpolating {}/{}'.format(c+1,idt.shape[0]))
+        # Read a raw image
+        im = np.rot90(data[wl][i].values,-1)
+        #Interpolate Polar
+        xgrid,ygrid,Zim = interpolatePolar(x,y,im,Nim)
+        # Assign to array
+        imae[c,:,:] = Zim
+        c += 1
+    
+    if asi:
+        return T, xgrid, ygrid, imae, [lon0, lat0]
+    else:
+        return T, xgrid, ygrid, imae
+    
