@@ -35,7 +35,6 @@ def interpolatePolar(x,y,im,N,bounds=[-80,80],method='linear'):
     xgrid, ygrid = np.mgrid[bounds[0]:bounds[1]:N*1j, 
                             bounds[0]:bounds[1]:N*1j]
     Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method,fill_value=0)
-    
     return xgrid, ygrid, Zim
 ###############################################################################
 def write2HDF(data,h5fn,wl):
@@ -62,7 +61,6 @@ def write2HDF(data,h5fn,wl):
         h5time.attrs[u'time format'] = 'time format in POSIX time'
         d.create_dataset('az', data=az)
         d.create_dataset('el', data=el)
-        
         h5img = d.create_dataset('img', data=images,compression=9)
         h5img.chunks
         h5img.attrs[u'Coordinates'] = 'Ntimes x Naz x Nel'
@@ -70,11 +68,43 @@ def write2HDF(data,h5fn,wl):
         f.close()
     except Exception as e:
         raise (e)
-
+###############################################################################
+def writeInterpolated2HDF(t,lon,lat,h,images,h5fn,lon0=0,lat0=0,alt0=0,N=None,wl=0):
+    if isinstance(t[0],datetime):
+        t = gu.datetime2posix(t)
+    if N == 0 or N is None:
+        N = lon.shape[0]
+    try:
+        f = h5py.File(h5fn,'w')
+        d = f.create_group('DASC')
+        d.attrs[u'converted'] = datetime.now().strftime('%Y-%m-%d')
+        d.attrs[u'wavelength'] = '{}'.format(wl)
+        d.attrs[u'image resolution'] = '{}'.format(N)
+        d.attrs[u'PKR camera lon'] = '{}'.format(lon0)
+        d.attrs[u'PKR camera lat'] = '{}'.format(lat0)
+        d.attrs[u'PKR camera alt'] = '{}'.format(alt0)
+        
+        h5time = d.create_dataset('time', data=t)
+        h5time.attrs[u'time format'] = 'time format in POSIX time'
+        
+        d.create_dataset('lon', data=lon)
+        d.create_dataset('lat', data=lat)
+        H = d.create_dataset('alt', data=h)
+        H.attrs[u'Mapping height'] = '{}'.format(h)
+        
+        h5img = d.create_dataset('img', data=images,compression=9)
+        h5img.chunks
+        h5img.attrs[u'Coordinates'] = 'Ntimes x Nlon x Nlat'
+        # Close file
+        f.close()
+    except Exception as e:
+        raise (e)
+###############################################################################
 def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
     t1 = datetime.now()
     data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
     print ('Data loaded in {}'.format(datetime.now()-t1))
+    
     return data
 
 def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
@@ -82,7 +112,7 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
     # Mapping altitude to meters
     mapping_alt = alt * 1e3
     # Read in the data utliizing DASCutils
-    print ('Reading the data')
+    print ('Reading the PKR asi images')
     t1 = datetime.now()
     data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,treq=timelim)
     print ('Data loaded in {}'.format(datetime.now()-t1))
@@ -123,7 +153,7 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
         c += 1
     
     if asi:
-        return T, xgrid, ygrid, imlla, [lon0, lat0]
+        return T, xgrid, ygrid, imlla, [lon0, lat0, alt0]
     else:
         return T, xgrid, ygrid, imlla
     
