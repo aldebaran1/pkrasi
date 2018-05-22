@@ -10,20 +10,31 @@ import dascutils.io as read_asi
 import numpy as np
 import h5py
 from pyGnss import gnssUtils as gu
-
-
+import matplotlib.pyplot as plt
 from pymap3d import aer2geodetic
 from scipy.interpolate import griddata
 
 
 def interpolateAS(x,y,im,N,method='linear'):
-    mask = np.ma.masked_invalid(x)
-    x1 = x[~mask.mask]
-    y1 = y[~mask.mask]
-    im = im[~mask.mask]
-    xgrid, ygrid = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N*1j, 
-                              np.nanmin(y).min():np.nanmax(y).max():N*1j]
-    Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method,fill_value=0)
+    if x.shape[0] == im.shape[0]:
+        mask = np.ma.masked_invalid(x)
+        x1 = x[~mask.mask]
+        y1 = y[~mask.mask]
+        im = im[~mask.mask]
+        xgrid, ygrid = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N*1j, 
+                                  np.nanmin(y).min():np.nanmax(y).max():N*1j]
+        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method,fill_value=0)
+    else:
+        N1 = im.shape[0]
+        x1,y1 = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N1*1j, 
+                         np.nanmin(y).min():np.nanmax(y).max():N1*1j]
+        mask = np.ma.masked_invalid(im)
+        x1 = x1[~mask.mask]
+        y1 = y1[~mask.mask]
+        im = im[~mask.mask]
+        xgrid, ygrid = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N*1j, 
+                                  np.nanmin(y).min():np.nanmax(y).max():N*1j]
+        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method)
     
     return xgrid, ygrid, Zim
 
@@ -100,6 +111,19 @@ def writeInterpolated2HDF(t,lon,lat,h,images,h5fn,lon0=0,lat0=0,alt0=0,N=None,wl
     except Exception as e:
         raise (e)
 ###############################################################################
+def readtInterpolatedHDF(h5fn):
+    f = h5py.File(h5fn, 'r')
+    t = f['DASC/time'].value
+    lon = f['DASC/lon'].value
+    lat = f['DASC/lat'].value
+    imstack = f['DASC/img'].value
+    # Check the observation time instance. Change to datetime if necessary
+    if not isinstance(t[0], datetime):
+        t = np.array([datetime.utcfromtimestamp(ts) for ts in t])
+    # Close the file
+    f.close()
+    return t, lon, lat, imstack
+###############################################################################
 def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
     t1 = datetime.now()
     data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
@@ -108,26 +132,20 @@ def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
     return data
 
 def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
-                      Nim=512, asi=False):
+                      Nim=512, asi=False, verbose=False):
     # Mapping altitude to meters
     mapping_alt = alt * 1e3
     # Read in the data utliizing DASCutils
     print ('Reading the PKR asi images')
     t1 = datetime.now()
-    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,treq=timelim)
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,treq=timelim,
+                         verbose=verbose)
     print ('Data loaded in {}'.format(datetime.now()-t1))
     # Get time vector as datetime
-    obstimes = data.time.values.astype(datetime)
-    # Timle limits
-    if len(timelim) > 0:
-        idt = np.where( (obstimes >= timelim[0]) & (obstimes <= timelim[1]))[0]
-    else:
-        idt = np.arange(obstimes.shape[0])
-    T = obstimes[idt]
-    print ('Data reducted from {0} to {1}'.format(obstimes.shape[0], T.shape[0]))
+    T = data.time.values.astype(datetime)
     # Get Az and El grids
-    az = data['az'].values
-    el = data['el'].values
+    az = data.az[1]
+    el = data.el[1]
     # Image size
     if Nim is None or (not isinstance(Nim,int)):
         Nim = az.shape[0]
@@ -142,8 +160,8 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
     # Make an empty image array
     imlla = np.nan * np.ones((T.shape[0],Nim,Nim))
     c = 0
-    for i in idt:
-        print ('Processing-interpolating {}/{}'.format(c+1,idt.shape[0]))
+    for i in range(T.shape[0]):
+        print ('Processing-interpolating {}/{}'.format(c+1,T.shape[0]))
         # Read a raw image
         im = np.rot90(data[wl][i].values,0)
         #Interpolate Lat Lon to preset Alt
@@ -174,8 +192,8 @@ def returnASpolar(folder,azfn=None,elfn=None, wl=558,
     T = obstimes[idt]
     print ('Data reducted from {0} to {1}'.format(obstimes.shape[0], T.shape[0]))
     # Get Az and El grids
-    az = data['az'].values
-    el = data['el'].values
+    az = data.az[1]
+    el = data.el[1]
     # Camera position
     lat0 = data.lat
     lon0 = data.lon
