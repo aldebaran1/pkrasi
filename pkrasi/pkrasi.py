@@ -14,6 +14,17 @@ import matplotlib.pyplot as plt
 from pymap3d import aer2geodetic
 from scipy.interpolate import griddata
 
+def interpolateCoordinate(x,N=1024,method='linear'):
+    x0,y0 = np.meshgrid(np.arange(x.shape[0]),
+                        np.arange(x.shape[1]))
+    mask = np.ma.masked_invalid(x)
+    x0 = x0[~mask.mask]
+    y0 = y0[~mask.mask]
+    X = x[~mask.mask]
+    x1,y1 = np.mgrid[0:x.shape[0]:N*1j, 
+                     0:x.shape[1]:N*1j]
+    z = griddata((x0,y0), X.ravel(), (x1, y1), method=method)
+    return z
 
 def interpolateAS(x,y,im,N,method='linear'):
     if x.shape[0] == im.shape[0]:
@@ -22,8 +33,9 @@ def interpolateAS(x,y,im,N,method='linear'):
         y1 = y[~mask.mask]
         im = im[~mask.mask]
         xgrid, ygrid = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N*1j, 
-                                  np.nanmin(y).min():np.nanmax(y).max():N*1j]
-        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method,fill_value=0)
+                                np.nanmin(y).min():np.nanmax(y).max():N*1j]
+        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), 
+                       method=method,fill_value=0)
     else:
         N1 = im.shape[0]
         x1,y1 = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N1*1j, 
@@ -33,19 +45,32 @@ def interpolateAS(x,y,im,N,method='linear'):
         y1 = y1[~mask.mask]
         im = im[~mask.mask]
         xgrid, ygrid = np.mgrid[np.nanmin(x).min():np.nanmax(x).max():N*1j, 
-                                  np.nanmin(y).min():np.nanmax(y).max():N*1j]
+                                np.nanmin(y).min():np.nanmax(y).max():N*1j]
         Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method)
-    
     return xgrid, ygrid, Zim
 
 def interpolatePolar(x,y,im,N,bounds=[-80,80],method='linear'):
-    mask = np.ma.masked_invalid(x)
-    x1 = x[~mask.mask]
-    y1 = y[~mask.mask]
-    im = im[~mask.mask]
-    xgrid, ygrid = np.mgrid[bounds[0]:bounds[1]:N*1j, 
-                            bounds[0]:bounds[1]:N*1j]
-    Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method,fill_value=0)
+    if x.shape[0] == im.shape[0]:
+        mask = np.ma.masked_invalid(x)
+        x1 = x[~mask.mask]
+        y1 = y[~mask.mask]
+        im = im[~mask.mask]
+        xgrid, ygrid = np.mgrid[bounds[0]:bounds[1]:N*1j, 
+                                bounds[0]:bounds[1]:N*1j]
+        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), 
+                       method=method,fill_value=0)
+    else:
+        # Resize image to a size of the grid:
+        N1 = im.shape[0]
+        mask = np.ma.masked_invalid(im)
+        x1,y1 = np.mgrid[bounds[0]:bounds[1]:N1*1j, 
+                         bounds[0]:bounds[1]:N1*1j]
+        x1 = x1[~mask.mask]
+        y1 = y1[~mask.mask]
+        im = im[~mask.mask]
+        xgrid, ygrid = np.mgrid[bounds[0]:bounds[1]:N*1j, 
+                                bounds[0]:bounds[1]:N*1j]
+        Zim = griddata((x1,y1), im.ravel(), (xgrid, ygrid), method=method)
     return xgrid, ygrid, Zim
 ###############################################################################
 def write2HDF(data,h5fn,wl):
@@ -126,26 +151,36 @@ def readtInterpolatedHDF(h5fn):
 ###############################################################################
 def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
     t1 = datetime.now()
-    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, 
+                         treq=timelim)
     print ('Data loaded in {}'.format(datetime.now()-t1))
     
     return data
 
-def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
-                      Nim=512, asi=False, verbose=False):
+def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558,timelim=[],alt=130,
+                      Nim=512,el_filter=None,asi=False, verbose=False):
     # Mapping altitude to meters
     mapping_alt = alt * 1e3
     # Read in the data utliizing DASCutils
     print ('Reading the PKR asi images')
     t1 = datetime.now()
-    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,treq=timelim,
-                         verbose=verbose)
+    data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl,
+                         treq=timelim,verbose=verbose)
     print ('Data loaded in {}'.format(datetime.now()-t1))
     # Get time vector as datetime
     T = data.time.values.astype(datetime)
     # Get Az and El grids
     az = data.az[1]
     el = data.el[1]
+    # Reshape image calibration if needed
+    im_test = data[wl][0].values
+    if im_test.shape[0] != el.shape[0]:
+        el = interpolateCoordinate(el,N=im_test.shape[0])
+        az = interpolateCoordinate(az,N=im_test.shape[0])
+    # Elivation filter/mask
+    if el_filter is not None and isinstance(el_filter,int):
+        el = np.where(el>=el_filter,el,np.nan)
+        az = np.where(el>=el_filter,az,np.nan)
     # Image size
     if Nim is None or (not isinstance(Nim,int)):
         Nim = az.shape[0]
@@ -159,44 +194,47 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558, timelim=[], alt=130,
     lat, lon, alt = aer2geodetic(az,el,r,lat0,lon0,alt0)
     # Make an empty image array
     imlla = np.nan * np.ones((T.shape[0],Nim,Nim))
-    c = 0
+#    c = 0
     for i in range(T.shape[0]):
         print ('Processing-interpolating {}/{}'.format(c+1,T.shape[0]))
         # Read a raw image
-        im = np.rot90(data[wl][i].values,0)
+        im = data[wl][i].values
         #Interpolate Lat Lon to preset Alt
         xgrid, ygrid, Zim = interpolateAS(lon,lat,im,N=Nim)
-        # Assign to array
-        imlla[c,:,:] = Zim
-        c += 1
+        # Assign to an array
+        imlla[i,:,:] = Zim
+#        c += 1
     
     if asi:
         return T, xgrid, ygrid, imlla, [lon0, lat0, alt0]
     else:
         return T, xgrid, ygrid, imlla
-    
+
 def returnASpolar(folder,azfn=None,elfn=None, wl=558, 
-                  timelim=[], Nim=512, asi=False):
+                  timelim=[], Nim=512, asi=False, el_filter=None):
     # Read in the data utliizing DASCutils
     print ('Reading the data')
     t1 = datetime.now()
     data = read_asi.load(folder,azfn=azfn,elfn=elfn, wavelenreq=wl, treq=timelim)
     print ('Data loaded in {}'.format(datetime.now()-t1))
     # Get time vector as datetime
-    obstimes = data.time.values.astype(datetime)
-    # Timle limits
-    if len(timelim) > 0:
-        idt = np.where( (obstimes >= timelim[0]) & (obstimes <= timelim[1]))[0]
-    else:
-        idt = np.arange(obstimes.shape[0])
-    T = obstimes[idt]
-    print ('Data reducted from {0} to {1}'.format(obstimes.shape[0], T.shape[0]))
+    T = data.time.values.astype(datetime)
+    print ('Data reducted from {0} to {1}'.format(T.shape[0], T.shape[0]))
     # Get Az and El grids
     az = data.az[1]
     el = data.el[1]
     # Camera position
     lat0 = data.lat
     lon0 = data.lon
+    # Reshape image calibration if needed
+    im_test = data[wl][0].values
+    if im_test.shape[0] != el.shape[0]:
+        el = interpolateCoordinate(el,N=im_test.shape[0])
+        az = interpolateCoordinate(az,N=im_test.shape[0])
+    # Elivation filter/mask
+    if el_filter is not None and isinstance(el_filter,int):
+        el = np.where(el>=el_filter,el,np.nan)
+        az = np.where(el>=el_filter,az,np.nan)
     # Image size
     if Nim is None or (not isinstance(Nim,int)):
         Nim = az.shape[0]
@@ -206,17 +244,14 @@ def returnASpolar(folder,azfn=None,elfn=None, wl=558,
     y = rel*np.sin(np.deg2rad(az))
     # Make an empty image array
     imae = np.nan * np.ones((T.shape[0],Nim,Nim))
-    c = 0
-    for i in idt:
-        print ('Processing-interpolating {}/{}'.format(c+1,idt.shape[0]))
+    for i in range(T.shape[0]):
+        print ('Processing-interpolating {}/{}'.format(i+1,T.shape[0]))
         # Read a raw image
         im = np.rot90(data[wl][i].values,-1)
         #Interpolate Polar
         xgrid,ygrid,Zim = interpolatePolar(x,y,im,Nim)
         # Assign to array
-        imae[c,:,:] = Zim
-        c += 1
-    
+        imae[i,:,:] = Zim
     if asi:
         return T, xgrid, ygrid, imae, [lon0, lat0]
     else:
