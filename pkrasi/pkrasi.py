@@ -196,7 +196,7 @@ def returnASLatLonAlt(folder,azfn=None,elfn=None,wl=558,timelim=[],alt=130,
     imlla = np.nan * np.ones((T.shape[0],Nim,Nim))
 #    c = 0
     for i in range(T.shape[0]):
-        print ('Processing-interpolating {}/{}'.format(c+1,T.shape[0]))
+        print ('Processing-interpolating {}/{}'.format(i+1,T.shape[0]))
         # Read a raw image
         im = data[wl][i].values
         #Interpolate Lat Lon to preset Alt
