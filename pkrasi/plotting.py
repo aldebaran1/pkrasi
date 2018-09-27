@@ -13,7 +13,7 @@ import cartopy.crs as ccrs
 
 
 def plotIMmap(x,y,z,title='',save=False,lon0=None,lat0=None,alt=None,
-              clim=[0,3000],cmap='Greens',norm_gamma=None):
+              clim=[0,3000],cmap='Greens',norm_gamma=None,figure=False):
     # Figure limits
     maplatlim = [58,72]
     maplonlim = [-162,-132]
@@ -34,19 +34,24 @@ def plotIMmap(x,y,z,title='',save=False,lon0=None,lat0=None,alt=None,
         gca.set_norm(colors.PowerNorm(gamma=norm_gamma))
     plt.clim(clim)
     plt.colorbar()
+    if figure:
+        pass
+#        return fig
     plt.show()
 ###############################################################################
 def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None,
-                lat0=None,lon0=None,norm_gamma=None):
+                norm_gamma=None,figure=False,
+                figsize=(8,8),savefn='',DPI=100):
     # Circles:
     azgrid = np.linspace(0,360,100)
     elgrid = np.linspace(0,80,100)
     rgrid = np.arange(10,80+1,20)
     anglegrid = np.arange(0,360,45)
     #Plot Image
-    fig = plt.figure(figsize=(8,8))
+    fig = plt.figure(figsize=figsize)
     plt.title(title,y=1.05)
     gca = plt.pcolormesh(x,y,z, cmap=cmap)
+#    return fig
     # Plot rings
     for i in range(rgrid.shape[0]):
         xc = rgrid[i] * np.cos(np.deg2rad(azgrid))
@@ -79,5 +84,11 @@ def plotIMpolar(x,y,z,title='',clim=[0,4000],cmap='Greens',save=None,
         gca.set_norm(colors.PowerNorm(gamma=norm_gamma))
     gca.set_clim(clim)
     plt.colorbar(cax=cbaxes)
-    plt.tight_layout()
-    plt.show()
+#    plt.tight_layout()
+    if savefn is not None or savefn != False or savefn != '':
+        plt.savefig(savefn,dpi=DPI)
+        plt.close(fig)
+    if figure:
+        return fig
+    else:
+        plt.show()

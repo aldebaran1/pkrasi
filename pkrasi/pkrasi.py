@@ -14,6 +14,22 @@ import matplotlib.pyplot as plt
 from pymap3d import aer2geodetic
 from scipy.interpolate import griddata
 
+from  scipy.spatial import Delaunay
+
+def interp_weights(xyz, uvw,d=3):
+    tri = Delaunay(xyz)
+    simplex = tri.find_simplex(uvw)
+    vertices = np.take(tri.simplices, simplex, axis=0)
+    temp = np.take(tri.transform, simplex, axis=0)
+    delta = uvw - temp[:, d]
+    bary = np.einsum('njk,nk->nj', temp[:, :d, :], delta)
+    return vertices, np.hstack((bary, 1 - bary.sum(axis=1, keepdims=True)))
+
+def interpolate(values, vtx, wts, fill_value=np.nan):
+    ret = np.einsum('nj,nj->n', np.take(values, vtx), wts)
+    ret[np.any(wts < 0, axis=1)] = fill_value
+    return ret
+
 def interpolateCoordinate(x,N=1024,method='linear'):
     x0,y0 = np.meshgrid(np.arange(x.shape[0]),
                         np.arange(x.shape[1]))
@@ -76,8 +92,8 @@ def interpolatePolar(x,y,im,N,bounds=[-80,80],method='linear'):
 def write2HDF(data,h5fn,wl):
     obstimes = data.time.values.astype(datetime)
     ts = gu.datetime2posix(obstimes)
-    az = data['az'].values
-    el = data['el'].values
+    az = data.az[1]
+    el = data.el[1]
     images = data[wl].values
     N = az.shape[0]
     lat0 = data.lat
@@ -148,6 +164,19 @@ def readtInterpolatedHDF(h5fn):
     # Close the file
     f.close()
     return t, lon, lat, imstack
+
+def readPolarHDF(h5fn):
+    f = h5py.File(h5fn, 'r')
+    t = f['DASC/time'].value
+    xgrid = f['DASC/xgrid'].value
+    ygrid = f['DASC/ygrid'].value
+    imstack = f['DASC/img'].value
+    # Check the observation time instance. Change to datetime if necessary
+    if not isinstance(t[0], datetime):
+        t = np.array([datetime.utcfromtimestamp(ts) for ts in t])
+    # Close the file
+    f.close()
+    return t, xgrid, ygrid, imstack
 ###############################################################################
 def returnRaw(folder,azfn=None,elfn=None,wl=558, timelim=[]):
     t1 = datetime.now()
@@ -226,6 +255,7 @@ def returnASpolar(folder,azfn=None,elfn=None, wl=558,
     # Camera position
     lat0 = data.lat
     lon0 = data.lon
+    alt0 = data.alt_m
     # Reshape image calibration if needed
     im_test = data[wl][0].values
     if im_test.shape[0] != el.shape[0]:
@@ -242,18 +272,39 @@ def returnASpolar(folder,azfn=None,elfn=None, wl=558,
     rel = 90-el
     x = rel*np.cos(np.deg2rad(az))
     y = rel*np.sin(np.deg2rad(az))
+    # Mask NaNs
+#    mask = np.ma.masked_invalid(x)
+#    x = x[~mask.mask]
+#    y = y[~mask.mask]
     # Make an empty image array
     imae = np.nan * np.ones((T.shape[0],Nim,Nim))
+    # Interpolation grid
+    # Input grid
+#    X,Y = np.mgrid[np.nanmin(x):np.nanmax(x):x.shape[0]*1j, 
+#                   np.nanmin(y):np.nanmax(y):y.shape[0]*1j]
+#    xy=np.zeros([X.shape[0] * x.shape[1],2])
+#    xy[:,0]=X.flatten()
+#    xy[:,1]=Y.flatten()
+    
+    # Output grid
+#    uv=np.zeros([Nim*Nim,2])
+#    Xi, Yi = np.mgrid[-80:80:Nim*1j, 
+#                      -80:80:Nim*1j]
+#    uv[:,0]=Yi.flatten()
+#    uv[:,1]=Xi.flatten()
+#    vtx, wts = interp_weights(xy, uv)
     for i in range(T.shape[0]):
         print ('Processing-interpolating {}/{}'.format(i+1,T.shape[0]))
         # Read a raw image
         im = np.rot90(data[wl][i].values,-1)
         #Interpolate Polar
         xgrid,ygrid,Zim = interpolatePolar(x,y,im,Nim)
+#        Zim=interpolate(im.flatten(), vtx, wts)
+        Zim=Zim.reshape(Nim,Nim)
         # Assign to array
         imae[i,:,:] = Zim
     if asi:
-        return T, xgrid, ygrid, imae, [lon0, lat0]
+        return T, xgrid, ygrid, imae, [lon0, lat0, alt0]
     else:
         return T, xgrid, ygrid, imae
     
